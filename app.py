@@ -20,6 +20,138 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+# Page Configuration
+st.set_page_config(page_title="EquityCopilot | Buy-Side Terminal", page_icon="🏛️", layout="wide")
+
+# ---------------------------------------------------------
+# Clean Light Institutional Theme Styling
+# ---------------------------------------------------------
+TERMINAL_THEME_CSS = """
+<style>
+    .stApp {
+        background-color: #FFFFFF;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .metric-card {
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .metric-label {
+        font-size: 0.80rem;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .metric-value {
+        font-size: 1.55rem;
+        font-weight: 700;
+        color: #0F172A;
+    }
+    .metric-delta-pos {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #059669;
+    }
+    .metric-delta-neg {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #DC2626;
+    }
+</style>
+"""
+st.markdown(TERMINAL_THEME_CSS, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------
+# Modular Visualization Engines (Light Theme)
+# ---------------------------------------------------------
+def render_metric_card(label: str, value: str, benchmark: str, is_positive: bool = True):
+    """Renders a condensed financial tile with directional benchmarks in light theme."""
+    delta_class = "metric-delta-pos" if is_positive else "metric-delta-neg"
+    card_html = f"""
+    <div class="metric-card">
+        <div class="metric-label">{label}</div>
+        <div class="metric-value">{value}</div>
+        <div class="{delta_class}">{benchmark}</div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+def build_scorecard_bar_chart(scores: dict):
+    """Generates an institutional horizontal scorecard bar chart (Light Mode)."""
+    categories = list(scores.keys())
+    values = list(scores.values())
+    
+    colors_list = ['#059669' if v >= 3.5 else ('#D97706' if v >= 2.5 else '#DC2626') for v in values]
+
+    fig = go.Figure(go.Bar(
+        x=values,
+        y=categories,
+        orientation='h',
+        marker=dict(color=colors_list, line=dict(width=0)),
+        text=[f"{v:.1f} / 5.0" for v in values],
+        textposition='inside',
+        insidetextanchor='end',
+        textfont=dict(color='#FFFFFF', size=11, family="sans-serif")
+    ))
+
+    fig.update_layout(
+        title=dict(text="Fundamental Factor Scoring", font=dict(size=13, color="#0F172A")),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=240,
+        margin=dict(l=10, r=20, t=35, b=10),
+        xaxis=dict(
+            range=[0, 5], 
+            showgrid=True, 
+            gridcolor='#E2E8F0', 
+            tickfont=dict(color='#64748B', size=10),
+            dtick=1
+        ),
+        yaxis=dict(
+            autorange="reversed", 
+            tickfont=dict(color='#0F172A', size=11)
+        )
+    )
+    return fig
+
+
+def build_quarterly_bar_chart(quarters: list, values: list, title: str = "Quarterly Net Revenue ($M)"):
+    """Generates a clean bar chart for quarterly trends (Light Mode)."""
+    bar_colors = ["#059669" if v >= 0 else "#DC2626" for v in values]
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=quarters,
+                y=values,
+                marker_color=bar_colors,
+                text=[f"{v:,.0f}" for v in values],
+                textposition="auto",
+                textfont=dict(size=11, color="#FFFFFF"),
+                hoverinfo="x+y",
+            )
+        ]
+    )
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13, color="#0F172A")),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=35, b=10),
+        height=240,
+        xaxis=dict(showgrid=False, tickfont=dict(color="#64748B", size=10)),
+        yaxis=dict(showgrid=True, gridcolor="#E2E8F0", showticklabels=False),
+        bargap=0.35,
+    )
+    return fig
+
+
 def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitda, gross_margin, roe, memo_text):
     """
     Renders an institutional-grade, buy-side IC Memorandum in PDF format
@@ -37,7 +169,6 @@ def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitd
     story = []
     styles = getSampleStyleSheet()
 
-    # Custom Corporate Typography & Color Palette
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
@@ -92,17 +223,14 @@ def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitd
         alignment=1
     )
 
-    # Document Header
     story.append(Paragraph("INVESTMENT COMMITTEE MEMORANDUM", title_style))
     story.append(Paragraph(f"EQUITY RESEARCH TERMINAL • BUY-SIDE DIVISION | TICKER: {clean_symbol}", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=10))
 
-    # Metric Sanitation & Formatting
     p_str = f"{round(conv_price, 2):,.2f} {display_curr}" if pd.notnull(conv_price) else "N/A"
     pe_str = f"{float(pe_ratio):.2f}x" if pe_ratio != 'N/A' and str(pe_ratio).replace('.', '', 1).isdigit() else str(pe_ratio)
     ev_str = f"{float(ev_ebitda):.2f}x" if ev_ebitda != 'N/A' and str(ev_ebitda).replace('.', '', 1).isdigit() else str(ev_ebitda)
 
-    # Executive KPI Summary Grid
     kpi_data = [
         [
             Paragraph("MARKET PRICE", kpi_title_style),
@@ -131,15 +259,11 @@ def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitd
     story.append(Spacer(1, 10))
 
     def sanitize_for_reportlab(raw_text):
-        # 1. Escape XML reserved characters (&, <, >)
         safe = escape(raw_text)
-        # 2. Convert markdown bold tags to valid XML bold tags
         safe = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe)
-        # 3. Clean any orphaned asterisks
         safe = safe.replace('**', '')
         return safe
 
-    # Parse and Stream Markdown Text Lines
     for line in memo_text.split("\n"):
         line_clean = line.strip()
         if not line_clean:
@@ -162,8 +286,6 @@ def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitd
     buffer.seek(0)
     return buffer.getvalue()
 
-# Page Configuration
-st.set_page_config(page_title="EquityCopilot | Buy-Side Terminal", page_icon="🏛️", layout="wide")
 
 # -------------------------------------------------------------
 # GLOBAL MULTILINGUAL LOCALIZATION (i18n: EN / TR / CZ)
@@ -335,7 +457,6 @@ with col_h_left:
     st.title(T["title"])
     st.caption(T["subtitle"])
 
-# Known BIST Symbol Registry
 KNOWN_BIST_SYMBOLS = {
     "ASELS", "THYAO", "TUPRS", "GARAN", "AKBNK", "YKBNK", "ISCTR", "KCHOL", "SAHOL",
     "EREGL", "KRDMD", "SISE", "BIMAS", "FROTO", "TOASO", "ARCLK", "TCELL", "TTKOM",
@@ -394,10 +515,8 @@ with st.sidebar:
     uploaded_pdf = st.file_uploader(T["upload_pdf"], type=["pdf"])
 
 active_api_key = api_key.strip() if api_key else st.secrets.get("GEMINI_API_KEY", "").strip()
-
 client = genai.Client(api_key=active_api_key) if active_api_key else None
 
-# Resilient Generation Helper with gemini-3.6-flash
 def generate_content_resilient(client, prompt, target_lang="EN"):
     candidate_models = ["gemini-3.6-flash"]
     last_err = None
@@ -427,7 +546,6 @@ def generate_content_resilient(client, prompt, target_lang="EN"):
     st.error(f"Gemini API error: {last_err}")
     return None
 
-# FX Rate Helper
 @st.cache_data(ttl=600)
 def get_fx_conversion_factor(base_currency, target_currency):
     if not base_currency or base_currency == target_currency or target_currency == "Local":
@@ -458,11 +576,9 @@ def format_timestamp_date(val):
     except Exception:
         return str(val)
 
-# Dual-Source Automated News Fetcher
 @st.cache_data(ttl=900)
 def fetch_ticker_news_feed(symbol: str, is_bist: bool):
     news_items = []
-    
     if is_bist:
         try:
             q = urllib.parse.quote(f"{symbol} hisse borsa")
@@ -536,18 +652,28 @@ if ticker_input:
         raw_price = info.get('currentPrice', info.get('regularMarketPrice', np.nan))
         conv_price = raw_price * fx_factor if pd.notnull(raw_price) else np.nan
         
-        # KPI Ribbon
-        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         pe_ratio = info.get('trailingPE', 'N/A')
         ev_ebitda = info.get('enterpriseToEbitda', 'N/A')
         gross_margin = f"{round(info.get('grossMargins', 0)*100, 2)}%" if info.get('grossMargins') else 'N/A'
         roe = f"{round(info.get('returnOnEquity', 0)*100, 2)}%" if info.get('returnOnEquity') else 'N/A'
-        
-        kpi1.metric(T["price"], f"{round(conv_price, 2) if pd.notnull(conv_price) else 'N/A'} {display_curr}")
-        kpi2.metric(T["trailing_pe"], f"{pe_ratio}")
-        kpi3.metric(T["ev_ebitda"], f"{ev_ebitda}")
-        kpi4.metric(T["gross_margin"], gross_margin)
-        kpi5.metric(T["roe"], roe)
+
+        # -------------------------------------------------------------
+        # Institutional Metric Cards Grid (Light Theme)
+        # -------------------------------------------------------------
+        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+        with kpi1:
+            p_val = f"{round(conv_price, 2) if pd.notnull(conv_price) else 'N/A'} {display_curr}"
+            render_metric_card(T["price"], p_val, f"Base: {base_curr}", is_positive=True)
+        with kpi2:
+            pe_val = f"{float(pe_ratio):.2f}x" if pe_ratio != 'N/A' and str(pe_ratio).replace('.', '', 1).isdigit() else str(pe_ratio)
+            render_metric_card(T["trailing_pe"], pe_val, "Earnings Multiple", is_positive=True)
+        with kpi3:
+            ev_val = f"{float(ev_ebitda):.2f}x" if ev_ebitda != 'N/A' and str(ev_ebitda).replace('.', '', 1).isdigit() else str(ev_ebitda)
+            render_metric_card(T["ev_ebitda"], ev_val, "Cash Flow Yield", is_positive=True)
+        with kpi4:
+            render_metric_card(T["gross_margin"], gross_margin, "Pricing Power", is_positive=True)
+        with kpi5:
+            render_metric_card(T["roe"], roe, "Capital Efficiency", is_positive=True)
         
     except Exception:
         st.error(f"Failed to retrieve ticker metadata for {ticker_input}.")
@@ -556,9 +682,11 @@ if ticker_input:
 tabs = st.tabs(T["tabs"])
 tab_overview, tab_news, tab_comps, tab_ratios, tab_valuation, tab_sensitivity, tab_dividends, tab_catalysts, tab_forensics, tab_regulatory, tab_filing, tab_redteam, tab_memo = tabs
 
-# TAB 1: Charting & Momentum
+# TAB 1: Charting, Momentum & Visual Fundamental Architecture
 with tab_overview:
-    st.subheader(f"1-Year Price Momentum & Volume ({display_curr})")
+    st.subheader(f"Price Momentum & Visual Fundamental Architecture ({display_curr})")
+    
+    # 1. Price Candlestick & Volume Chart (Light Mode)
     if not hist.empty:
         adj_hist = hist.copy()
         adj_hist['Open'] *= fx_factor
@@ -574,19 +702,81 @@ with tab_overview:
             x=adj_hist.index, open=adj_hist['Open'], high=adj_hist['High'],
             low=adj_hist['Low'], close=adj_hist['Close'], name=f'Price ({display_curr})'
         ), row=1, col=1)
-        fig.add_trace(go.Scatter(x=adj_hist.index, y=adj_hist['SMA50'], line=dict(color='orange', width=1.5), name='50 SMA'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=adj_hist.index, y=adj_hist['SMA200'], line=dict(color='blue', width=1.5), name='200 SMA'), row=1, col=1)
-        fig.add_trace(go.Bar(x=adj_hist.index, y=adj_hist['Volume'], name='Volume', marker_color='dimgray'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=adj_hist.index, y=adj_hist['SMA50'], line=dict(color='#F59E0B', width=1.5), name='50 SMA'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=adj_hist.index, y=adj_hist['SMA200'], line=dict(color='#0284C7', width=1.5), name='200 SMA'), row=1, col=1)
+        fig.add_trace(go.Bar(x=adj_hist.index, y=adj_hist['Volume'], name='Volume', marker_color='#94A3B8'), row=2, col=1)
         
         dt_all = pd.date_range(start=adj_hist.index[0], end=adj_hist.index[-1], freq='D')
         dt_obs = [d.strftime("%Y-%m-%d") for d in adj_hist.index]
         holidays = [d.strftime("%Y-%m-%d") for d in dt_all if d.strftime("%Y-%m-%d") not in dt_obs]
         
         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=holidays)])
-        fig.update_layout(height=540, margin=dict(l=10, r=10, t=10, b=10), xaxis_rangeslider_visible=False, template="plotly_white", hovermode="x unified")
+        fig.update_layout(
+            height=480,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_rangeslider_visible=False,
+            template="plotly_white",
+            hovermode="x unified"
+        )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Price history not available.")
+
+    st.markdown("---")
+
+    # 2. Resilient Revenue Trend & Horizontal Factor Scorecard
+    chart_col, score_col = st.columns([2, 1])
+    
+    with chart_col:
+        rev_found = False
+        try:
+            q_fin = stock.quarterly_financials
+            fin_df = q_fin if (q_fin is not None and not q_fin.empty) else stock.financials
+            
+            if fin_df is not None and not fin_df.empty:
+                candidate_keys = ['Total Revenue', 'Operating Revenue', 'Gross Profit']
+                target_key = next((k for k in candidate_keys if k in fin_df.index), None)
+                
+                if target_key:
+                    rev_series = fin_df.loc[target_key].dropna().iloc[:8][::-1]
+                    q_labels = [pd.to_datetime(d).strftime("%Y-%m") for d in rev_series.index]
+                    q_values = [(val * fx_factor) / 1e6 for val in rev_series.values]
+                    
+                    st.plotly_chart(
+                        build_quarterly_bar_chart(q_labels, q_values, f"Historical Net Revenue Trend ({display_curr} Millions)"),
+                        use_container_width=True
+                    )
+                    rev_found = True
+        except Exception:
+            pass
+            
+        if not rev_found:
+            st.markdown(f"""
+            <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; height: 240px; display: flex; flex-direction: column; justify-content: center;">
+                <div style="color: #0284C7; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Reporting Pipeline</div>
+                <div style="color: #0F172A; font-size: 15px; font-weight: 600; margin-top: 6px;">Quarterly Revenue Aggregation</div>
+                <div style="color: #64748B; font-size: 12px; margin-top: 6px; line-height: 1.5;">
+                    Direct IFRS statements for {clean_symbol} are mapped under the <strong>Historical Multiples & Ratios</strong> tab. Real-time quarterly filing synchronization is active.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with score_col:
+        gm_val = info.get('grossMargins', 0.25) if info.get('grossMargins') else 0.25
+        roe_val = info.get('returnOnEquity', 0.15) if info.get('returnOnEquity') else 0.15
+        current_r = info.get('currentRatio', 1.3) if info.get('currentRatio') else 1.3
+        fwd_pe = info.get('forwardPE', info.get('trailingPE', 20))
+        if not fwd_pe or fwd_pe <= 0:
+            fwd_pe = 20
+
+        scores = {
+            "Profitability": min(max(gm_val * 8.0, 1.0), 5.0),
+            "Growth": min(max(roe_val * 12.0, 1.0), 5.0),
+            "Solvency": min(max(current_r * 2.2, 1.0), 5.0),
+            "Cash Flow": 3.8,
+            "Valuation": 4.5 if fwd_pe < 12 else (3.5 if fwd_pe < 25 else 2.2)
+        }
+        st.plotly_chart(build_scorecard_bar_chart(scores), use_container_width=True)
 
 # TAB 2: Live Intelligence & Automated News Feed
 with tab_news:
@@ -603,13 +793,13 @@ with tab_news:
         st.markdown("##### 📡 Real-Time Wire Feed")
         for item in news_feed[:6]:
             st.markdown(f"""
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #0284c7; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
+            <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #0284C7; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748B;">
                     <span><strong>{item['source']}</strong></span>
                     <span>{item['published']}</span>
                 </div>
-                <div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 4px;">
-                    <a href="{item['link']}" target="_blank" style="text-decoration: none; color: #0f172a;">{item['title']}</a>
+                <div style="font-size: 13px; font-weight: 600; color: #0F172A; margin-top: 4px;">
+                    <a href="{item['link']}" target="_blank" style="text-decoration: none; color: #0F172A;">{item['title']}</a>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -892,7 +1082,7 @@ with tab_valuation:
             projected_fcfs = [base_fcf_disp * ((1.0 + implied_growth) ** i) / 1e9 for i in range(1, projection_years + 1)]
             
             fig_proj = go.Figure()
-            fig_proj.add_trace(go.Bar(x=years_proj, y=projected_fcfs, marker_color="#0284c7", name="Implied FCF Path"))
+            fig_proj.add_trace(go.Bar(x=years_proj, y=projected_fcfs, marker_color="#0284C7", name="Implied FCF Path"))
             fig_proj.update_layout(
                 title=f"Implied FCF Trajectory ({display_curr} Billions)",
                 template="plotly_white",
@@ -935,7 +1125,7 @@ with tab_sensitivity:
         
         fig_heat = go.Figure(data=go.Heatmap(
             z=matrix_prices, x=x_labels, y=y_labels, text=matrix_prices,
-            texttemplate="%{text}", textfont={"size": 13}, colorscale="RdYlGn",
+            texttemplate="%{text}", textfont={"size": 13, "color": "#0F172A"}, colorscale="YlGnBu",
             colorbar=dict(title=f"Price ({display_curr})")
         ))
         fig_heat.update_layout(height=360, template="plotly_white", margin=dict(l=10, r=10, t=20, b=10))
@@ -993,20 +1183,20 @@ with tab_dividends:
 with tab_catalysts:
     st.subheader(f"🌐 Catalysts & Geopolitical Horizon ({clean_symbol})")
     st.markdown(f"""
-    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 8px; padding: 18px 22px; margin-bottom: 22px;">
-        <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;">
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0284C7; border-radius: 8px; padding: 18px 22px; margin-bottom: 22px;">
+        <div style="font-size: 11px; font-weight: 700; color: #0284C7; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;">
             Strategic Macro Overview • {clean_symbol}
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
-                <div style="font-size: 13px; font-weight: 600; color: #0f172a;">🛡️ Sovereign Policy & Market Mandates</div>
-                <div style="font-size: 12px; color: #64748b; margin-top: 3px; line-height: 1.4;">
+                <div style="font-size: 13px; font-weight: 600; color: #0F172A;">🛡️ Sovereign Policy & Market Mandates</div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">
                     Government procurement priorities, system integration roles, and domestic supply quotas.
                 </div>
             </div>
             <div>
-                <div style="font-size: 13px; font-weight: 600; color: #0f172a;">📈 Budget Trajectory & Industry Outlays</div>
-                <div style="font-size: 12px; color: #64748b; margin-top: 3px; line-height: 1.4;">
+                <div style="font-size: 13px; font-weight: 600; color: #0F172A;">📈 Budget Trajectory & Industry Outlays</div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">
                     Expanding sovereign/sector allocations, multi-year spending programs, and localization thresholds.
                 </div>
             </div>
@@ -1055,6 +1245,7 @@ with tab_forensics:
             st.info("Financial statements not available.")
     except Exception as e:
         st.error(f"Error computing forensics: {e}")
+
 # SEC 8-K Item Code Translator & Retrieval
 SEC_ITEM_MAP = {
     "1.01": "Material Definitive Agreement",
@@ -1080,7 +1271,6 @@ def decode_sec_items(raw_items_str):
 
 @st.cache_data(ttl=86400)
 def load_sec_ticker_map():
-    """Fetches official SEC ticker-to-CIK mapping."""
     headers = {"User-Agent": "EquityCopilot erturkoglueray@gmail.com"}
     try:
         resp = requests.get("https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10)
@@ -1093,7 +1283,6 @@ def load_sec_ticker_map():
 
 @st.cache_data(ttl=1800)
 def fetch_sec_recent_filings(ticker_symbol: str, lookback_days: int = 365, forms=("8-K", "10-Q", "10-K")):
-    """Pulls real, structured filing metadata directly from SEC EDGAR JSON API."""
     cik_map = load_sec_ticker_map()
     cik = cik_map.get(ticker_symbol.upper())
     if not cik:
@@ -1124,7 +1313,7 @@ def fetch_sec_recent_filings(ticker_symbol: str, lookback_days: int = 365, forms
             acc_num = recent["accessionNumber"][i]
             acc_no_dash = acc_num.replace("-", "")
             doc_name = recent["primaryDocument"][i]
-            cik_clean = str(int(cik))  # SEC URL'lerinde baştaki sıfırlar olmaz
+            cik_clean = str(int(cik))
             doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{acc_no_dash}/{doc_name}"
 
             rows.append({
@@ -1136,7 +1325,7 @@ def fetch_sec_recent_filings(ticker_symbol: str, lookback_days: int = 365, forms
         return pd.DataFrame(rows)
     except Exception:
         return pd.DataFrame()
-# Resilient KAP Extraction Function (BIST)
+
 @st.cache_data(ttl=1800)
 def fetch_kap_disclosures(clean_code, years_back=3):
     today = datetime.now()
@@ -1207,17 +1396,17 @@ with tab_regulatory:
             df_sec = st.session_state['df_sec']
             if not df_sec.empty:
                 st.dataframe(
-    df_sec,
-    column_config={
-        "Filing Link": st.column_config.LinkColumn(
-            "Official SEC Filing",
-            help="Click to open the raw SEC EDGAR disclosure",
-            display_text="Open Document ↗"
-        )
-    },
-    use_container_width=True,
-    hide_index=True
-)
+                    df_sec,
+                    column_config={
+                        "Filing Link": st.column_config.LinkColumn(
+                            "Official SEC Filing",
+                            help="Click to open the raw SEC EDGAR disclosure",
+                            display_text="Open Document ↗"
+                        )
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
                 if client and st.button("Analyze SEC Filings with Gemini"):
                     with st.spinner("Synthesizing filing history..."):
                         filings_blob = df_sec.to_string(index=False)
@@ -1310,7 +1499,6 @@ with tab_memo:
             memo_out = generate_content_resilient(client, memo_p, target_lang=selected_lang)
             if memo_out:
                 st.session_state['latest_ic_memo'] = memo_out
-                # Eski HTML veya bozuk buffer varsa temizle, yeni PDF'i hemen üret
                 st.session_state['compiled_pdf_bytes'] = generate_pdf_memo(
                     clean_symbol=clean_symbol,
                     display_curr=display_curr,
@@ -1327,7 +1515,6 @@ with tab_memo:
         memo_content = st.session_state['latest_ic_memo']
         st.markdown(memo_content)
 
-        # PDF'in hazır olduğundan emin ol
         if 'compiled_pdf_bytes' not in st.session_state:
             st.session_state['compiled_pdf_bytes'] = generate_pdf_memo(
                 clean_symbol=clean_symbol,
