@@ -1094,17 +1094,40 @@ with tab_regulatory:
 # TAB 11: Filing Intelligence (PDF Reader)
 with tab_filing:
     st.subheader(T["tabs"][10])
-    if uploaded_pdf and client:
-        pdf_reader = pypdf.PdfReader(uploaded_pdf)
-        pdf_text = "".join([p.extract_text() or "" for p in pdf_reader.pages[:25]])[:30000]
-        query = st.text_input("Custom Forensic Query:", value="Detail backlog evolution, export concentration, and cash burn.")
-        if st.button("Extract Filing Forensics"):
-            with st.spinner("Analyzing document..."):
-                p = f"Analyze this filing excerpt: {pdf_text}. Query: {query}. Format as an institutional memo."
+    st.caption("Upload annual reports (10-K / 20-F), investor presentations, or earnings call transcripts for forensic parsing.")
+    
+    uploaded_pdf = st.file_uploader(T["upload_pdf"], type=["pdf"], key="tab_pdf_uploader")
+    
+    if uploaded_pdf:
+        st.success(f"Loaded filing: {uploaded_pdf.name}")
+        query = st.text_input(
+            "Custom Forensic Query:", 
+            value="Detail backlog evolution, export concentration, supply chain bottlenecks, and cash burn."
+        )
+        
+        if client and st.button("Extract Filing Forensics"):
+            with st.spinner("Parsing PDF and extracting material disclosures..."):
+                pdf_reader = pypdf.PdfReader(uploaded_pdf)
+                pdf_text = "".join([p.extract_text() or "" for p in pdf_reader.pages[:30]])[:40000]
+                
+                p = (
+                    f"You are a Senior Buy-Side Forensic Analyst. Analyze this raw corporate filing excerpt:\n\n"
+                    f"{pdf_text}\n\n"
+                    f"User Inquiry: {query}\n\n"
+                    f"Structure your findings into:\n"
+                    f"1. CORE FINDINGS & DISCLOSURE HIGHLIGHTS\n"
+                    f"2. RISKS, COVENANTS & FOOTNOTE ANOMALIES\n"
+                    f"3. ANALYST TAKEAWAY & THESIS IMPACT\n"
+                    f"Avoid generic summaries; cite specific numbers and management commentary."
+                )
                 o = generate_content_resilient(client, p, target_lang=selected_lang)
-                if o: st.markdown(o)
-    elif not uploaded_pdf:
-        st.info(T["upload_pdf"])
+                if o:
+                    st.markdown("---")
+                    st.markdown(o)
+        elif not client:
+            st.warning(T["enter_key_warn"])
+    else:
+        st.info("Drag and drop an official PDF report above to begin forensic extraction.")
 
 # TAB 12: Hostile Bear-Case
 with tab_redteam:
