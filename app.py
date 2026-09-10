@@ -1144,11 +1144,14 @@ with tab_redteam:
 with tab_memo:
     st.subheader(T["tabs"][12])
     if client and st.button(T["gen_memo"]):
-        with st.spinner("Synthesizing IC note..."):
+       with st.spinner("Synthesizing IC note..."):
+            today_str = datetime.now().strftime("%B %d, %Y")
             memo_p = f"""
-            Draft an institutional 1-page Investment Committee Recommendation Memo for {clean_symbol} ({ticker_input}).
+            You are a Senior Technology Equity Research Analyst drafting an institutional 1-page Investment Committee Recommendation Memo for {clean_symbol} ({ticker_input}).
+            MANDATORY DATE: Use today's exact date: {today_str}. Do NOT invent past dates.
             Price: {round(conv_price, 2) if pd.notnull(conv_price) else 'N/A'} {display_curr} | P/E: {pe_ratio} | EV/EBITDA: {ev_ebitda} | ROE: {roe}
             Structure:
+            - MEMORANDUM HEADER (TO: Investment Committee, FROM: Senior Equity Analyst, DATE: {today_str}, SUBJECT: Investment Recommendation: {clean_symbol})
             1. EXECUTIVE RECOMMENDATION (Actionable verdict, Target Multiple, Time Horizon)
             2. CORE INVESTMENT THESIS (3 distinct moats & catalysts)
             3. VALUATION & CAPITAL EFFICIENCY
