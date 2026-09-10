@@ -12,23 +12,32 @@ import xml.etree.ElementTree as ET
 import urllib.parse
 import time
 from datetime import datetime, timedelta
+import re
 from io import BytesIO
+from xml.sax.saxutils import escape
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitda, gross_margin, roe, memo_text):
+    """
+    Renders an institutional-grade, buy-side IC Memorandum in PDF format
+    using ReportLab Flowables, custom typography, and strict XML entity escaping.
+    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
     )
     story = []
     styles = getSampleStyleSheet()
 
-    # Özel Kurumsal Stiller
+    # Custom Corporate Typography & Color Palette
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
@@ -83,56 +92,76 @@ def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitd
         alignment=1
     )
 
-    # Başlık Alanı
+    # Document Header
     story.append(Paragraph("INVESTMENT COMMITTEE MEMORANDUM", title_style))
     story.append(Paragraph(f"EQUITY RESEARCH TERMINAL • BUY-SIDE DIVISION | TICKER: {clean_symbol}", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=10))
 
-    # Metrikleri Düzenleme
+    # Metric Sanitation & Formatting
     p_str = f"{round(conv_price, 2):,.2f} {display_curr}" if pd.notnull(conv_price) else "N/A"
-    pe_str = f"{float(pe_ratio):.2f}x" if pe_ratio != 'N/A' and str(pe_ratio).replace('.','',1).isdigit() else str(pe_ratio)
-    ev_str = f"{float(ev_ebitda):.2f}x" if ev_ebitda != 'N/A' and str(ev_ebitda).replace('.','',1).isdigit() else str(ev_ebitda)
+    pe_str = f"{float(pe_ratio):.2f}x" if pe_ratio != 'N/A' and str(pe_ratio).replace('.', '', 1).isdigit() else str(pe_ratio)
+    ev_str = f"{float(ev_ebitda):.2f}x" if ev_ebitda != 'N/A' and str(ev_ebitda).replace('.', '', 1).isdigit() else str(ev_ebitda)
 
-    # KPI Tablosu
+    # Executive KPI Summary Grid
     kpi_data = [
-        [Paragraph("MARKET PRICE", kpi_title_style), Paragraph("P/E MULTIPLE", kpi_title_style), Paragraph("EV / EBITDA", kpi_title_style), Paragraph("GROSS MARGIN", kpi_title_style), Paragraph("ROE", kpi_title_style)],
-        [Paragraph(p_str, kpi_val_style), Paragraph(pe_str, kpi_val_style), Paragraph(ev_str, kpi_val_style), Paragraph(str(gross_margin), kpi_val_style), Paragraph(str(roe), kpi_val_style)]
+        [
+            Paragraph("MARKET PRICE", kpi_title_style),
+            Paragraph("P/E MULTIPLE", kpi_title_style),
+            Paragraph("EV / EBITDA", kpi_title_style),
+            Paragraph("GROSS MARGIN", kpi_title_style),
+            Paragraph("ROE", kpi_title_style)
+        ],
+        [
+            Paragraph(p_str, kpi_val_style),
+            Paragraph(pe_str, kpi_val_style),
+            Paragraph(ev_str, kpi_val_style),
+            Paragraph(str(gross_margin), kpi_val_style),
+            Paragraph(str(roe), kpi_val_style)
+        ]
     ]
-    t = Table(kpi_data, colWidths=[108]*5)
+    t = Table(kpi_data, colWidths=[108] * 5)
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
-        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(t)
     story.append(Spacer(1, 10))
 
-    # Metin Gövdesini Ayrıştırıp Ekleme
+    def sanitize_for_reportlab(raw_text):
+        # 1. Escape XML reserved characters (&, <, >)
+        safe = escape(raw_text)
+        # 2. Convert markdown bold tags to valid XML bold tags
+        safe = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe)
+        # 3. Clean any orphaned asterisks
+        safe = safe.replace('**', '')
+        return safe
+
+    # Parse and Stream Markdown Text Lines
     for line in memo_text.split("\n"):
         line_clean = line.strip()
         if not line_clean:
             story.append(Spacer(1, 4))
             continue
         if line_clean.startswith("### "):
-            story.append(Paragraph(line_clean.replace("### ", ""), heading_style))
+            clean_head = sanitize_for_reportlab(line_clean.replace("### ", ""))
+            story.append(Paragraph(clean_head, heading_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceAfter=4))
         elif line_clean.startswith("#### "):
-            story.append(Paragraph(f"<b>{line_clean.replace('#### ', '')}</b>", body_style))
+            clean_sub = sanitize_for_reportlab(line_clean.replace("#### ", ""))
+            story.append(Paragraph(f"<b>{clean_sub}</b>", body_style))
         elif line_clean.startswith("---"):
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceAfter=6))
         else:
-            # Markdown kalın etiketlerini temiz HTML bold tag'ine çevir
-            formatted_line = line_clean.replace("**", "<b>", 1)
-            while "**" in formatted_line:
-                formatted_line = formatted_line.replace("**", "</b>", 1)
-            story.append(Paragraph(formatted_line, body_style))
+            safe_line = sanitize_for_reportlab(line_clean)
+            story.append(Paragraph(safe_line, body_style))
 
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
-    
+
 # Page Configuration
 st.set_page_config(page_title="EquityCopilot | Buy-Side Terminal", page_icon="🏛️", layout="wide")
 
