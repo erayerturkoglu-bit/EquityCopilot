@@ -1332,3 +1332,4 @@ with tab_memo:
             file_name=f"IC_Memo_{clean_symbol}_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf"
         )
+        
