@@ -244,7 +244,9 @@ with st.sidebar:
     st.markdown("---")
     uploaded_pdf = st.file_uploader(T["upload_pdf"], type=["pdf"])
 
-client = genai.Client(api_key=api_key) if api_key else None
+active_api_key = api_key.strip() if api_key else st.secrets.get("GEMINI_API_KEY", "").strip()
+
+client = genai.Client(api_key=active_api_key) if active_api_key else None
 
 # Resilient Generation Helper with gemini-3.6-flash
 def generate_content_resilient(client, prompt, target_lang="EN"):
