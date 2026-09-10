@@ -199,7 +199,8 @@ KNOWN_BIST_SYMBOLS = {
 # Sidebar
 with st.sidebar:
     st.header(T["terminal_config"])
-    api_key = st.text_input(T["gemini_key"], type="password")
+    default_key = st.secrets.get("GEMINI_API_KEY", "")
+    api_key = st.text_input(T["gemini_key"], value=default_key, type="password")
     
     raw_user_input = st.text_input(T["primary_ticker"], value="asels").strip()
     
