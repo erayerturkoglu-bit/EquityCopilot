@@ -1264,7 +1264,7 @@ with tab_redteam:
 with tab_memo:
     st.subheader(T["tabs"][12])
     if client and st.button(T["gen_memo"]):
-       with st.spinner("Synthesizing IC note..."):
+        with st.spinner("Synthesizing IC note..."):
             today_str = datetime.now().strftime("%B %d, %Y")
             memo_p = f"""
             You are a Senior Technology Equity Research Analyst drafting an institutional 1-page Investment Committee Recommendation Memo for {clean_symbol} ({ticker_input}).
@@ -1285,8 +1285,8 @@ with tab_memo:
         st.markdown("---")
         memo_content = st.session_state['latest_ic_memo']
         st.markdown(memo_content)
-        
-       st.markdown("---")
+
+        st.markdown("---")
         pdf_bytes = generate_pdf_memo(
             clean_symbol=clean_symbol,
             display_curr=display_curr,
