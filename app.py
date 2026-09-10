@@ -972,12 +972,17 @@ def fetch_sec_recent_filings(ticker_symbol: str, lookback_days: int = 365, forms
                 continue
             
             raw_item = items_list[i] if i < len(items_list) else ""
+            acc_num = recent["accessionNumber"][i]
+            acc_no_dash = acc_num.replace("-", "")
+            doc_name = recent["primaryDocument"][i]
+            cik_clean = str(int(cik))  # SEC URL'lerinde baştaki sıfırlar olmaz
+            doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{acc_no_dash}/{doc_name}"
+
             rows.append({
                 "Date": filed,
                 "Form": form,
-                "Event / Item": decode_sec_items(raw_item) if form == "8-K" else form,
-                "Accession": recent["accessionNumber"][i],
-                "Primary Doc": recent["primaryDocument"][i]
+                "Event / Item": decode_sec_items(raw_item) if form in ("8-K", "6-K") else form,
+                "Filing Link": doc_url
             })
         return pd.DataFrame(rows)
     except Exception:
@@ -1052,7 +1057,18 @@ with tab_regulatory:
         if 'df_sec' in st.session_state:
             df_sec = st.session_state['df_sec']
             if not df_sec.empty:
-                st.dataframe(df_sec, use_container_width=True)
+                st.dataframe(
+    df_sec,
+    column_config={
+        "Filing Link": st.column_config.LinkColumn(
+            "Official SEC Filing",
+            help="Click to open the raw SEC EDGAR disclosure",
+            display_text="Open Document ↗"
+        )
+    },
+    use_container_width=True,
+    hide_index=True
+)
                 if client and st.button("Analyze SEC Filings with Gemini"):
                     with st.spinner("Synthesizing filing history..."):
                         filings_blob = df_sec.to_string(index=False)
