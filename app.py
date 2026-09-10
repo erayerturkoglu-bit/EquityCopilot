@@ -906,7 +906,82 @@ with tab_forensics:
             st.info("Financial statements not available.")
     except Exception as e:
         st.error(f"Error computing forensics: {e}")
+# SEC 8-K Item Code Translator & Retrieval
+SEC_ITEM_MAP = {
+    "1.01": "Material Definitive Agreement",
+    "1.02": "Termination of Material Agreement",
+    "2.01": "Acquisition/Disposition of Assets",
+    "2.02": "Results of Operations (Earnings)",
+    "2.03": "Creation of Direct Financial Obligation",
+    "3.02": "Unregistered Equity Sales",
+    "4.01": "Changes in Certifying Accountant",
+    "5.01": "Changes in Control",
+    "5.02": "Departure/Election of Directors or Officers",
+    "7.01": "Regulation FD Disclosure",
+    "8.01": "Other Material Events",
+    "9.01": "Financial Statements & Exhibits"
+}
 
+def decode_sec_items(raw_items_str):
+    if not raw_items_str or not isinstance(raw_items_str, str):
+        return ""
+    codes = [c.strip() for c in raw_items_str.split(",") if c.strip()]
+    decoded = [f"{c} ({SEC_ITEM_MAP.get(c, 'Event')})" for c in codes]
+    return ", ".join(decoded)
+
+@st.cache_data(ttl=86400)
+def load_sec_ticker_map():
+    """Fetches official SEC ticker-to-CIK mapping."""
+    headers = {"User-Agent": "EquityCopilot erturkoglueray@gmail.com"}
+    try:
+        resp = requests.get("https://www.sec.gov/files/company_tickers.json", headers=headers, timeout=10)
+        if resp.status_code == 200:
+            raw = resp.json()
+            return {v["ticker"].upper(): str(v["cik_str"]).zfill(10) for v in raw.values()}
+    except Exception:
+        pass
+    return {}
+
+@st.cache_data(ttl=1800)
+def fetch_sec_recent_filings(ticker_symbol: str, lookback_days: int = 365, forms=("8-K", "10-Q", "10-K")):
+    """Pulls real, structured filing metadata directly from SEC EDGAR JSON API."""
+    cik_map = load_sec_ticker_map()
+    cik = cik_map.get(ticker_symbol.upper())
+    if not cik:
+        return pd.DataFrame()
+    
+    headers = {"User-Agent": "EquityCopilot erturkoglueray@gmail.com"}
+    url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return pd.DataFrame()
+        
+        data = resp.json()
+        recent = data.get("filings", {}).get("recent", {})
+        cutoff = datetime.now() - timedelta(days=lookback_days)
+        items_list = recent.get("items", [""] * len(recent.get("form", [])))
+        
+        rows = []
+        for i in range(len(recent.get("form", []))):
+            form = recent["form"][i]
+            if form not in forms:
+                continue
+            filed = recent["filingDate"][i]
+            if pd.to_datetime(filed) < cutoff:
+                continue
+            
+            raw_item = items_list[i] if i < len(items_list) else ""
+            rows.append({
+                "Date": filed,
+                "Form": form,
+                "Event / Item": decode_sec_items(raw_item) if form == "8-K" else form,
+                "Accession": recent["accessionNumber"][i],
+                "Primary Doc": recent["primaryDocument"][i]
+            })
+        return pd.DataFrame(rows)
+    except Exception:
+        return pd.DataFrame()
 # Resilient KAP Extraction Function (BIST)
 @st.cache_data(ttl=1800)
 def fetch_kap_disclosures(clean_code, years_back=3):
@@ -964,13 +1039,41 @@ with tab_regulatory:
                 st.warning("Direct KAP endpoint query was blocked or returned no records.")
     else:
         st.subheader(f"🏛️ SEC EDGAR & Global Regulatory Filings ({clean_symbol})")
-        if client and st.button(f"Audit Material SEC Filings for {clean_symbol}"):
-            with st.spinner(f"Auditing SEC Form 8-K / 10-K disclosures for {clean_symbol}..."):
-                sec_p = f"Audit SEC Form 8-K events, major customer deals, M&A, and antitrust developments for {clean_symbol}. Structure with verified dates and monetary values."
-                sec_res = generate_content_resilient(client, sec_p, target_lang=selected_lang)
-                if sec_res: st.markdown(sec_res)
-        elif not client:
-            st.warning(T["enter_key_warn"])
+        col_s1, col_s2 = st.columns([1, 2])
+        with col_s1:
+            sec_years = st.slider("Lookback Window (Years)", min_value=1, max_value=3, value=1, key="sec_lookback")
+            load_sec = st.button("Fetch Direct SEC EDGAR Filings")
+
+        if load_sec:
+            with st.spinner("Querying SEC EDGAR..."):
+                df_sec = fetch_sec_recent_filings(clean_symbol, lookback_days=365 * sec_years)
+                st.session_state['df_sec'] = df_sec
+
+        if 'df_sec' in st.session_state:
+            df_sec = st.session_state['df_sec']
+            if not df_sec.empty:
+                st.dataframe(df_sec, use_container_width=True)
+                if client and st.button("Analyze SEC Filings with Gemini"):
+                    with st.spinner("Synthesizing filing history..."):
+                        filings_blob = df_sec.to_string(index=False)
+                        sec_p = (
+                            f"Here is the ACTUAL SEC EDGAR filing history for {clean_symbol}, pulled "
+                            f"directly from SEC.gov (form type, filing date, 8-K item codes decoded). "
+                            f"Do NOT invent any filing, date, or monetary value not present below:\n\n"
+                            f"{filings_blob}\n\n"
+                            f"Summarize the material disclosure pattern: which item categories dominate, "
+                            f"filing cadence, and any notable gaps or clusters. Structure: "
+                            f"1. DISCLOSURE PATTERN SUMMARY  2. NOTABLE EVENTS  3. WHAT'S ABSENT / WORTH WATCHING."
+                        )
+                        sec_res = generate_content_resilient(client, sec_p, target_lang=selected_lang)
+                        if sec_res:
+                            st.markdown("---")
+                            st.markdown(sec_res)
+            else:
+                st.warning("No SEC EDGAR filings found, or CIK could not be resolved for this ticker.")
+
+        if not client and 'df_sec' in st.session_state and not st.session_state['df_sec'].empty:
+            st.info("Add a Gemini API key in the sidebar to synthesize a summary — the filing table above is already live SEC data.")
 
 # TAB 11: Filing Intelligence (PDF Reader)
 with tab_filing:
