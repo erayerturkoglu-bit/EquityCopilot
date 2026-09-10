@@ -12,7 +12,127 @@ import xml.etree.ElementTree as ET
 import urllib.parse
 import time
 from datetime import datetime, timedelta
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+def generate_pdf_memo(clean_symbol, display_curr, conv_price, pe_ratio, ev_ebitda, gross_margin, roe, memo_text):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+    )
+    story = []
+    styles = getSampleStyleSheet()
+
+    # Özel Kurumsal Stiller
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor('#0f172a'),
+        spaceAfter=2
+    )
+    subtitle_style = ParagraphStyle(
+        'SubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor('#0284c7'),
+        spaceAfter=12
+    )
+    heading_style = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor('#0f172a'),
+        spaceBefore=10,
+        spaceAfter=4
+    )
+    body_style = ParagraphStyle(
+        'BodyTextCustom',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor('#1e293b'),
+        spaceAfter=4
+    )
+    kpi_title_style = ParagraphStyle(
+        'KPITitle',
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        leading=8,
+        textColor=colors.HexColor('#64748b'),
+        alignment=1
+    )
+    kpi_val_style = ParagraphStyle(
+        'KPIVal',
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        leading=13,
+        textColor=colors.HexColor('#0284c7'),
+        alignment=1
+    )
+
+    # Başlık Alanı
+    story.append(Paragraph("INVESTMENT COMMITTEE MEMORANDUM", title_style))
+    story.append(Paragraph(f"EQUITY RESEARCH TERMINAL • BUY-SIDE DIVISION | TICKER: {clean_symbol}", subtitle_style))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284c7'), spaceAfter=10))
+
+    # Metrikleri Düzenleme
+    p_str = f"{round(conv_price, 2):,.2f} {display_curr}" if pd.notnull(conv_price) else "N/A"
+    pe_str = f"{float(pe_ratio):.2f}x" if pe_ratio != 'N/A' and str(pe_ratio).replace('.','',1).isdigit() else str(pe_ratio)
+    ev_str = f"{float(ev_ebitda):.2f}x" if ev_ebitda != 'N/A' and str(ev_ebitda).replace('.','',1).isdigit() else str(ev_ebitda)
+
+    # KPI Tablosu
+    kpi_data = [
+        [Paragraph("MARKET PRICE", kpi_title_style), Paragraph("P/E MULTIPLE", kpi_title_style), Paragraph("EV / EBITDA", kpi_title_style), Paragraph("GROSS MARGIN", kpi_title_style), Paragraph("ROE", kpi_title_style)],
+        [Paragraph(p_str, kpi_val_style), Paragraph(pe_str, kpi_val_style), Paragraph(ev_str, kpi_val_style), Paragraph(str(gross_margin), kpi_val_style), Paragraph(str(roe), kpi_val_style)]
+    ]
+    t = Table(kpi_data, colWidths=[108]*5)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+
+    # Metin Gövdesini Ayrıştırıp Ekleme
+    for line in memo_text.split("\n"):
+        line_clean = line.strip()
+        if not line_clean:
+            story.append(Spacer(1, 4))
+            continue
+        if line_clean.startswith("### "):
+            story.append(Paragraph(line_clean.replace("### ", ""), heading_style))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceAfter=4))
+        elif line_clean.startswith("#### "):
+            story.append(Paragraph(f"<b>{line_clean.replace('#### ', '')}</b>", body_style))
+        elif line_clean.startswith("---"):
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceAfter=6))
+        else:
+            # Markdown kalın etiketlerini temiz HTML bold tag'ine çevir
+            formatted_line = line_clean.replace("**", "<b>", 1)
+            while "**" in formatted_line:
+                formatted_line = formatted_line.replace("**", "</b>", 1)
+            story.append(Paragraph(formatted_line, body_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+    
 # Page Configuration
 st.set_page_config(page_title="EquityCopilot | Buy-Side Terminal", page_icon="🏛️", layout="wide")
 
@@ -1166,43 +1286,20 @@ with tab_memo:
         memo_content = st.session_state['latest_ic_memo']
         st.markdown(memo_content)
         
-        memo_html_body = memo_content.replace("\n", "<br>")
-        html_report = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>IC Memo - {clean_symbol}</title>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; color: #0f172a; line-height: 1.6; }}
-                .header {{ border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }}
-                .header h1 {{ margin: 0; font-size: 22px; color: #0f172a; text-transform: uppercase; }}
-                .kpi-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 25px; }}
-                .kpi-box {{ text-align: center; }}
-                .kpi-title {{ font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; }}
-                .kpi-val {{ font-size: 15px; font-weight: 700; color: #0284c7; margin-top: 3px; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Equity Research Investment Committee Memo</h1>
-                <div>Company: <strong>{clean_symbol}</strong> | Currency: {display_curr} | Language: {selected_lang}</div>
-            </div>
-            <div class="kpi-grid">
-                <div class="kpi-box"><div class="kpi-title">Price</div><div class="kpi-val">{round(conv_price, 2) if pd.notnull(conv_price) else 'N/A'}</div></div>
-                <div class="kpi-box"><div class="kpi-title">P/E</div><div class="kpi-val">{pe_ratio}</div></div>
-                <div class="kpi-box"><div class="kpi-title">EV/EBITDA</div><div class="kpi-val">{ev_ebitda}</div></div>
-                <div class="kpi-box"><div class="kpi-title">Margin</div><div class="kpi-val">{gross_margin}</div></div>
-                <div class="kpi-box"><div class="kpi-title">ROE</div><div class="kpi-val">{roe}</div></div>
-            </div>
-            <div>{memo_html_body}</div>
-        </body>
-        </html>
-        """
-        st.markdown("---")
+       st.markdown("---")
+        pdf_bytes = generate_pdf_memo(
+            clean_symbol=clean_symbol,
+            display_curr=display_curr,
+            conv_price=conv_price,
+            pe_ratio=pe_ratio,
+            ev_ebitda=ev_ebitda,
+            gross_margin=gross_margin,
+            roe=roe,
+            memo_text=memo_content
+        )
         st.download_button(
-            label=T["download_memo"],
-            data=html_report,
-            file_name=f"IC_Memo_{clean_symbol}_{selected_lang}_{datetime.now().strftime('%Y%m%d')}.html",
-            mime="text/html"
+            label="📥 Download IC Memo as Official PDF",
+            data=pdf_bytes,
+            file_name=f"IC_Memo_{clean_symbol}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
         )
