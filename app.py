@@ -1292,7 +1292,8 @@ with tab_redteam:
 # TAB 13: 1-Click IC Memo & One-Pager Export
 with tab_memo:
     st.subheader(T["tabs"][12])
-    if client and st.button(T["gen_memo"]):
+    
+    if client and st.button(T["gen_memo"], key="btn_generate_ic_memo"):
         with st.spinner("Synthesizing IC note..."):
             today_str = datetime.now().strftime("%B %d, %Y")
             memo_p = f"""
@@ -1309,27 +1310,43 @@ with tab_memo:
             memo_out = generate_content_resilient(client, memo_p, target_lang=selected_lang)
             if memo_out:
                 st.session_state['latest_ic_memo'] = memo_out
+                # Eski HTML veya bozuk buffer varsa temizle, yeni PDF'i hemen üret
+                st.session_state['compiled_pdf_bytes'] = generate_pdf_memo(
+                    clean_symbol=clean_symbol,
+                    display_curr=display_curr,
+                    conv_price=conv_price,
+                    pe_ratio=pe_ratio,
+                    ev_ebitda=ev_ebitda,
+                    gross_margin=gross_margin,
+                    roe=roe,
+                    memo_text=memo_out
+                )
 
     if 'latest_ic_memo' in st.session_state:
         st.markdown("---")
         memo_content = st.session_state['latest_ic_memo']
         st.markdown(memo_content)
 
+        # PDF'in hazır olduğundan emin ol
+        if 'compiled_pdf_bytes' not in st.session_state:
+            st.session_state['compiled_pdf_bytes'] = generate_pdf_memo(
+                clean_symbol=clean_symbol,
+                display_curr=display_curr,
+                conv_price=conv_price,
+                pe_ratio=pe_ratio,
+                ev_ebitda=ev_ebitda,
+                gross_margin=gross_margin,
+                roe=roe,
+                memo_text=memo_content
+            )
+
         st.markdown("---")
-        pdf_bytes = generate_pdf_memo(
-            clean_symbol=clean_symbol,
-            display_curr=display_curr,
-            conv_price=conv_price,
-            pe_ratio=pe_ratio,
-            ev_ebitda=ev_ebitda,
-            gross_margin=gross_margin,
-            roe=roe,
-            memo_text=memo_content
-        )
+        file_name_out = f"IC_Memo_{clean_symbol}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        
         st.download_button(
             label="📥 Download IC Memo as Official PDF",
-            data=pdf_bytes,
-            file_name=f"IC_Memo_{clean_symbol}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf"
+            data=st.session_state['compiled_pdf_bytes'],
+            file_name=file_name_out,
+            mime="application/pdf",
+            key=f"dl_pdf_{clean_symbol}"
         )
-        
