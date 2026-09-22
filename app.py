@@ -518,7 +518,7 @@ active_api_key = api_key.strip() if api_key else st.secrets.get("GEMINI_API_KEY"
 client = genai.Client(api_key=active_api_key) if active_api_key else None
 
 def generate_content_resilient(client, prompt, target_lang="EN"):
-    candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash"]
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash"]
     last_err = None
     
     lang_instructions = {
@@ -530,10 +530,11 @@ def generate_content_resilient(client, prompt, target_lang="EN"):
     final_prompt = prompt + f"\n\n{lang_instructions.get(target_lang, lang_instructions['EN'])}\n"
     
     for model_name in candidate_models:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 res = client.models.generate_content(model=model_name, contents=final_prompt)
-                return res.text
+                if res and res.text:
+                    return res.text
             except ServerError:
                 time.sleep(1.5 * (attempt + 1))
             except ClientError as ce:
@@ -542,6 +543,9 @@ def generate_content_resilient(client, prompt, target_lang="EN"):
             except Exception as e:
                 last_err = e
                 break
+        else:
+            continue
+        continue
                 
     st.error(f"Gemini API error: {last_err}")
     return None
