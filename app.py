@@ -518,7 +518,7 @@ active_api_key = api_key.strip() if api_key else st.secrets.get("GEMINI_API_KEY"
 client = genai.Client(api_key=active_api_key) if active_api_key else None
 
 def generate_content_resilient(client, prompt, target_lang="EN"):
-    candidate_models = ["gemini-3.6-flash"]
+    candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash"]
     last_err = None
     
     lang_instructions = {
